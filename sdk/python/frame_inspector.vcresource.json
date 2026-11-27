@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "platform": "windows-x64",
+  "id": "studio.frame-inspector",
+  "name": "Frame Inspector",
+  "developer": "Ethos SDK Example",
+  "version": "1.0.0",
+  "type": "python",
+  "entry": "frame_inspector.py",
+  "files": {
+    "frame_inspector.py": "7c94da1c03c36a2c77881098ccf0cf15359915462e1dac85c795610445120bce"
+  }
+}

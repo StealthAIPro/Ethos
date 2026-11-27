@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.20)
+project(VisionCoreFrameOutlineExample LANGUAGES CXX)
+
+add_library(VisionCoreFrameOutline SHARED frame_outline.cpp)
+target_compile_features(VisionCoreFrameOutline PRIVATE cxx_std_20)
+target_compile_definitions(VisionCoreFrameOutline PRIVATE VC_BUILD_PLUGIN)
+target_include_directories(VisionCoreFrameOutline PRIVATE ..)

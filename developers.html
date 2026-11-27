@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Ethos developer documentation for Python, native C++, OFS, GPC3, resource manifests, controller output, and Discord authorization.">
+  <title>Developer documentation · Ethos</title>
+  <link rel="icon" href="assets/ethos-logo.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="bar"><div class="shell bar-inner">
+    <a class="brand" href="index.html"><img src="assets/ethos-logo.png" alt="" width="34" height="34">Ethos</a>
+    <nav aria-label="Main navigation"><a href="index.html">Download</a><a aria-current="page" href="developers.html">Developers</a></nav>
+  </div></header>
+  <main class="shell docs" id="main">
+    <nav class="toc" aria-label="On this page">
+      <p class="label">On this page</p>
+      <ul>
+        <li><a href="#start">Choose a runtime</a></li><li><a href="#python">Python SDK</a></li>
+        <li><a href="#native">Native C++ SDK</a></li><li><a href="#process">Standalone processes</a></li>
+        <li><a href="#ofs">OFS Lua</a></li><li><a href="#gpc3">GPC3 compatibility</a></li>
+        <li><a href="#controller">Controller bridges</a></li><li><a href="#resources">Resource manifests</a></li>
+        <li><a href="#identity">Discord and device binding</a></li><li><a href="#debug">Troubleshooting</a></li>
+      </ul>
+    </nav>
+    <article>
+      <p class="label">SDK revision 2 · Windows x64</p>
+      <h1>Developer documentation</h1>
+      <p class="lead">Build scripts and plugins for live capture, controller input, and resource distribution in Ethos.</p>
+      <p><a class="primary" href="assets/ethos-developer-sdk.zip" download>Download the SDK examples <span aria-hidden="true">↓</span></a></p>
+
+      <section id="start">
+        <h2>Choose a runtime</h2>
+        <div class="table-wrap"><table><thead><tr><th scope="col">Runner</th><th scope="col">Entry file</th><th scope="col">Required input</th></tr></thead><tbody>
+          <tr><td><a href="#python">Python</a></td><td><code>.py</code></td><td>Physical capture frames</td></tr>
+          <tr><td><a href="#native">C++</a></td><td>Windows x64 <code>.dll</code> or <code>.vcplugin.json</code></td><td>Physical capture frames for the standard runtime</td></tr>
+          <tr><td><a href="#ofs">OFS</a></td><td>UTF-8 <code>.ofs</code> Lua or the supported <code>.gpc3</code> subset</td><td>Selected controller bridge</td></tr>
+        </tbody></table></div>
+        <p>Start a physical capture card before running Python or native CV. Capture and preview have independent frame rates. The script receives the latest available frame when it is ready, so a slow script can skip frames while the preview continues.</p>
+      </section>
+
+      <section id="python">
+        <h2>Python SDK</h2>
+        <p>Use a compatible 64-bit CPython 3.10–3.13 installation. In the <strong>Python</strong> tab, import your script, open <strong>Dependencies</strong> to install packages in its environment, and start capture. Then select <strong>Start script</strong> and review the launch. Ethos adds <code>visioncore</code> to the script environment.</p>
+        <pre><code>from visioncore import VisionCore
+
+app = VisionCore()
+
+@app.on_start
+def setup():
+    app.log(f"Running in profile {app.session['profile']}")
+
+@app.on_frame
+def process(frame):
+    app.rect(16, 16, frame.width - 32, frame.height - 32)
+    app.text(24, 34, f"{frame.width} × {frame.height}")
+
+@app.on_shutdown
+def stop():
+    app.log("Stopped")
+
+app.run()</code></pre>
+        <p><a href="sdk/python/frame_inspector.py" download>Download the frame inspector</a> · <a href="sdk/python/reference.md">Python SDK reference</a></p>
+        <h3>Lifecycle, session, and settings</h3>
+        <ul>
+          <li><code>on_start(fn)</code>, <code>on_frame(fn)</code>, and <code>on_shutdown(fn)</code> register callbacks. Register one callback of each kind, then call <code>run()</code> once. The shutdown callback runs on an orderly stop.</li>
+          <li><code>app.settings</code> reads the profile’s JSON settings for the current run. <code>app.session</code> provides <code>sdkRevision</code>, <code>appVersion</code>, <code>runtime</code>, <code>profile</code>, <code>controllerBackend</code>, <code>captureSource</code>, and <code>captureFormat</code>.</li>
+          <li><code>app.log(message)</code> writes to the output console. The host also captures script output and Python tracebacks.</li>
+          <li><code>app.discord</code> and <code>app.identity</code> are available for resources configured with the corresponding access policy. <a href="#identity">See the fields and verification flow.</a></li>
+        </ul>
+        <h3>Frame and overlay APIs</h3>
+        <div class="table-wrap"><table><thead><tr><th scope="col">API</th><th scope="col">Behavior</th></tr></thead><tbody>
+          <tr><td><code>width, height, stride, pixels</code></td><td>Read-only RGBA8888. <code>stride</code> is the row size in bytes. Keep the view within the frame callback.</td></tr>
+          <tr><td><code>as_numpy(region=None)</code></td><td>Read-only <code>H × W × 4</code> uint8 view with NumPy. For a region, pass <code>(x, y, width, height)</code>. Convert RGBA when your OpenCV code expects BGR.</td></tr>
+          <tr><td><code>pixel(x, y)</code>, <code>copy_region(x, y, width, height)</code></td><td><code>pixel</code> returns an RGBA tuple. <code>copy_region</code> returns packed bytes that can outlive the callback. Both work without NumPy.</td></tr>
+          <tr><td><code>sequence, received_ns, skipped</code></td><td>Runtime sequence starts at 1. Time is monotonic relative to launch. <code>skipped</code> counts runtime drops between delivered frames.</td></tr>
+          <tr><td><code>rect(x,y,w,h,color,weight)</code>, <code>circle(x,y,r,color,weight)</code>, <code>line(x1,y1,x2,y2,color,weight)</code>, <code>text(x,y,text,color,size)</code></td><td>Use source-pixel coordinates inside the frame callback. Up to 128 drawings per frame.</td></tr>
+        </tbody></table></div>
+        <p>Read <code>app.controller</code> and call <code>app.set_controller_output(buttons=…, axes=…, triggers=…)</code> inside a frame callback. <a href="#controller">See the control names and ranges.</a></p>
+      </section>
+
+      <section id="native">
+        <h2>Native C++ SDK</h2>
+        <p>Build a Windows x64 DLL with the Visual Studio C++ toolchain. Define <code>VC_BUILD_PLUGIN</code>, include <code>visioncore_plugin.h</code>, and export <code>vc_get_plugin(uint32_t host_abi)</code>. The function returns your static <code>VcPlugin</code> table for ABI 1. Set its <code>struct_size</code> to <code>sizeof(VcPlugin)</code>.</p>
+        <pre><code>cmake -S sdk/native/examples -B example-build -G "Visual Studio 17 2022" -A x64
+cmake --build example-build --config Release</code></pre>
+        <p>Import <code>VisionCoreFrameOutline.dll</code> from the example build’s <code>Release</code> folder in <strong>C++</strong>. Start capture, then choose <strong>Start plugin</strong>.</p>
+        <p><a href="sdk/native/visioncore_plugin.h" download>Download the ABI header</a> · <a href="sdk/native/examples/frame_outline.cpp" download>Frame Outline C++</a> · <a href="sdk/native/examples/CMakeLists.txt" download>Example CMake project</a> · <a href="sdk/native/reference.md">Native SDK reference</a></p>
+        <ul>
+          <li><code>initialize(host, settings_json, instance)</code> receives the host table, UTF-8 JSON, and a place to store your instance. Return 0 to accept. Clean up partially initialized state before returning an error.</li>
+          <li><code>on_frame(instance, frame)</code> receives read-only RGBA8 and the physical controller state. Respect row stride and pointer lifetime. Call <code>host-&gt;draw</code> and <code>host-&gt;set_controller</code> synchronously here. Return 0 to publish the frame’s output.</li>
+          <li><code>shutdown(instance)</code> releases resources on orderly stop. Keep C++ exceptions and memory ownership on your side of the DLL boundary.</li>
+          <li><code>VcControllerOutput</code> uses <code>button_mask</code>, <code>axis_mask</code>, and <code>trigger_mask</code> to select overridden values. The public header lists control enums and overlay shape layouts.</li>
+          <li>Check <code>VC_HOST_BASE_SIZE</code> and <code>VC_HOST_HAS(host, field)</code> when using optional revision 2 callbacks <code>frame_info</code> and <code>session_json</code>. Use frame data in <code>on_frame</code>. Session JSON describes the launch.</li>
+          <li><code>VC_PLUGIN_CONTROLLER_ONLY</code> tells the host pixel access can be skipped. In the standard import runner this flag can still run on capture timing. The bundled NoMeter26 resource has dedicated controller-only routing.</li>
+        </ul>
+      </section>
+
+      <section id="process">
+        <h2>Standalone processes</h2>
+        <p>Import a <code>.vcplugin.json</code> file beside a Windows x64 executable. Example manifest:</p>
+        <pre><code>{"name":"Frame Outline","kind":"process","abi":1,"entry":"FrameOutline.exe"}</code></pre>
+        <p>Ethos starts the executable with <code>--visioncore-native-v1 &lt;mapping-name&gt; &lt;capacity-bytes&gt;</code>. The transport uses UTF-8 JSON lines. Reserve stdout for protocol messages, flush each line, and log to stderr or send a <code>log</code> message.</p>
+        <div class="table-wrap"><table><thead><tr><th scope="col">Direction</th><th scope="col">Type</th><th scope="col">Fields</th></tr></thead><tbody>
+          <tr><td>Host to plugin</td><td><code>initialize</code></td><td><code>abi: 1</code>, <code>settings</code>, and optional <code>session</code>.</td></tr>
+          <tr><td>Plugin to host</td><td><code>ready</code></td><td><code>abi: 1</code> and a three-part <code>version</code>.</td></tr>
+          <tr><td>Host to plugin</td><td><code>frame</code></td><td><code>width</code>, <code>height</code>, <code>stride</code>, <code>controller</code>, and optional <code>frameInfo</code> with <code>sequence</code>, <code>receivedNs</code>, and <code>skipped</code>.</td></tr>
+          <tr><td>Plugin to host</td><td><code>done</code></td><td>One response per frame. Optional <code>overlays</code> and partial <code>controller</code> output.</td></tr>
+          <tr><td>Plugin to host</td><td><code>log</code>, <code>error</code></td><td><code>message</code>. Exit nonzero after a fatal error.</td></tr>
+          <tr><td>Host to plugin</td><td><code>stop</code></td><td>Finish the current frame and exit. Treat stdin closure as shutdown.</td></tr>
+        </tbody></table></div>
+        <p>Open Windows shared memory with <code>OpenFileMappingW(FILE_MAP_READ, …)</code>. Validate stride against width and mapping capacity before accessing RGBA pixels. Read the frame only while it is pending.</p>
+        <p>Each overlay uses <code>kind</code>, <code>x</code>, <code>y</code>, <code>a</code>, <code>b</code>, <code>color</code>, <code>weight</code>, and optional <code>text</code>. For a rectangle, <code>a</code> and <code>b</code> are width and height. For a line they are the end point, and for a circle <code>a</code> is the radius.</p>
+        <pre><code>{"type":"done","overlays":[{"kind":"rect","x":16,"y":16,"a":100,"b":60,"color":"#c4a3ff","weight":2}]}</code></pre>
+      </section>
+
+      <section id="ofs">
+        <h2>Write an OFS script</h2>
+        <p>Save a UTF-8 text file with the <code>.ofs</code> extension. Use the <strong>OFS</strong> tab to import it, connect the selected controller bridge, then select <strong>Start script</strong>. OFS uses controller updates and does not require a capture feed.</p>
+        <pre><code>-- ofs {"name":"Stick deadzone","author":"Example","version":"1.0.0","requires_api":1,"permissions":["controller.read","controller.write"]}
+function on_tick(dt_ms)
+    if math.abs(offset.get("RX")) &lt; 10 then
+        offset.set("RX", 0)
+    else
+        offset.release("RX")
+    end
+end</code></pre>
+        <p><a href="sdk/ofs/stick-deadzone.ofs" download>Download the OFS example</a></p>
+        <p>Put optional <code>-- ofs {…}</code> metadata on the first line. Available fields are <code>name</code>, <code>author</code>, <code>version</code>, <code>description</code>, <code>requires_api</code>, and <code>permissions</code>. The header defaults to <code>controller.read</code>. Request <code>controller.write</code> to override controls. The current API version is 1 and the source limit is 256 KiB.</p>
+        <div class="table-wrap"><table><thead><tr><th scope="col">Callback or API</th><th scope="col">Behavior</th></tr></thead><tbody>
+          <tr><td><code>on_init()</code></td><td>Runs once after the script loads.</td></tr>
+          <tr><td><code>on_tick(dt_ms)</code></td><td>Runs on controller input updates. Receives elapsed milliseconds since the prior tick.</td></tr>
+          <tr><td><code>on_event(control, value, previous)</code></td><td>Receives input changes using canonical control names.</td></tr>
+          <tr><td><code>on_unload()</code></td><td>Cleanup callback. New writes and timers are unavailable here.</td></tr>
+          <tr><td><code>offset.get(name)</code></td><td>Reads physical input. Sticks are −100…100 with positive Y up. Triggers are 0…100. Buttons read as 0 or 100.</td></tr>
+          <tr><td><code>offset.set(name, value)</code> · <code>offset.release(name)</code></td><td>Set or clear a single override. Release hands that control back to physical input.</td></tr>
+          <tr><td><code>offset.hold(name, value, ms)</code></td><td>Sets the control temporarily and returns a timer ID.</td></tr>
+          <tr><td><code>offset.after(ms, fn)</code> · <code>offset.cancel(id)</code></td><td>Schedule a callback or cancel a timer. Delays are 0…60,000 ms. The runtime allows 64 timers.</td></tr>
+          <tr><td><code>offset.now()</code> · <code>offset.log(text)</code> · <code>offset.api_version</code></td><td>Elapsed milliseconds since load, workspace logging, and API version.</td></tr>
+        </tbody></table></div>
+        <p>Control names are case-sensitive. Axes are <code>LX</code>, <code>LY</code>, <code>RX</code>, <code>RY</code>. Triggers are <code>LT</code> and <code>RT</code>. Buttons include <code>A B X Y LB RB Back Start LS RS Guide Touchpad Capture PaddleR PaddleL PaddleR2 PaddleL2 Misc1 Up Down Left Right</code>. PlayStation aliases include <code>Cross Circle Square Triangle L1 R1 L2 R2 L3 R3 PS Options</code>.</p>
+        <p>Use the available Lua base, math, string, and table functions. File loading, external processes, network libraries, and compiled bytecode are unavailable. Keep callbacks short so they stay within the execution budget.</p>
+      </section>
+
+      <section id="gpc3">
+        <h2>Write a GPC3 script for Ethos</h2>
+        <p>Save the source as <code>.gpc3</code> and import it in the <strong>OFS</strong> tab. The translator accepts a single <code>main { … }</code>, comments, <code>set_val</code>, <code>get_actual</code>, <code>get_val</code>, and braced <code>if</code>/<code>else</code> with simple numeric comparisons.</p>
+        <pre><code>main {
+    if (get_actual(STICK_1_X) &gt; 80) {
+        set_val(STICK_1_X, 80);
+    } else {
+        if (get_actual(STICK_1_X) &lt; -80) {
+            set_val(STICK_1_X, -80);
+        }
+    }
+}</code></pre>
+        <p><a href="sdk/ofs/stick-limit.gpc3" download>Download the GPC3 example</a></p>
+        <ul>
+          <li><code>get_actual(control)</code> reads physical input. <code>get_val(control)</code> reads the value already assigned this tick or the physical value if no assignment exists.</li>
+          <li><code>set_val(control, expression)</code> accepts a numeric literal or one supported read. Comparators are <code>== != &gt;= &lt;= &gt; &lt;</code>. Semicolons terminate set calls.</li>
+          <li><code>STICK_1_X/Y</code> maps to right stick and <code>STICK_2_X/Y</code> to left stick. GPC3 Y uses its original sign convention. <code>BUTTON_1</code> through <code>BUTTON_18</code> map, in order, to Guide, Back, Start, RB, RT, RS, LB, LT, LS, Up, Down, Left, Right, Y, B, A, X, and Capture.</li>
+          <li>Assignments reset between ticks. Unsupported syntax such as combos, arithmetic expressions, GCV packet helpers, input translators, and compiled bytecode produces an output-console error.</li>
+        </ul>
+      </section>
+
+      <section id="controller">
+        <h2>Controller input and output</h2>
+        <p>Profile 1 uses Remote Play, profile 2 uses Titan Two, and profile 3 uses Makcu. Use the right-hand <strong>Controller</strong> selector for the physical input device. The selected bridge owns output. Video scripts continue to use the physical capture card for frames.</p>
+        <p>Python and native processes expose <code>connected</code>, <code>buttons</code>, <code>axes</code>, and <code>triggers</code>. Python buttons take booleans. Axes <code>lx ly rx ry</code> use −1…1 with positive Y up, and <code>lt rt</code> use 0…1. Common buttons are <code>a b x y lb rb back start ls rs guide up down left right</code>. Availability depends on the bridge.</p>
+        <pre><code>if app.controller.get("connected") and app.controller["buttons"].get("ls"):
+    app.set_controller_output(axes={"lx": 0.0})</code></pre>
+        <p>Apply partial overrides only for the controls your script handles. Physical input passes through for other controls. CV overrides expire on stop, disconnect, or after frames stop arriving. OFS can explicitly release controls between ticks.</p>
+      </section>
+
+      <section id="resources">
+        <h2>Package a resource</h2>
+        <p>Open a <code>.vcresource.json</code> in <strong>Resources → Open manifest</strong>. Ethos checks the metadata and file hashes before copying the resource. Start the resource separately after installation.</p>
+        <pre><code>{
+  "schema": 1,
+  "platform": "windows-x64",
+  "id": "studio.frame-inspector",
+  "name": "Frame Inspector",
+  "developer": "Your studio",
+  "version": "1.0.0",
+  "type": "python",
+  "entry": "frame_inspector.py",
+  "files": { "frame_inspector.py": "REPLACE_WITH_64_HEX_SHA256" }
+}</code></pre>
+        <pre><code>(Get-FileHash -Algorithm SHA256 -LiteralPath '.\frame_inspector.py').Hash.ToLowerInvariant()</code></pre>
+        <p><a href="sdk/python/frame_inspector.vcresource.json" download>Download the ready-to-import example manifest</a>. Keep it beside the matching frame inspector script.</p>
+        <p>Set <code>type</code> to <code>python</code>, <code>native</code>, <code>controller</code>, or <code>weights</code>. Native manifests require <code>abi: 1</code> and a DLL or standalone-process manifest entry. Controller entries use <code>.ofs</code> or <code>.gpc3</code>. Weight entries use <code>.onnx</code> or <code>.oxm</code> for Trace. List every package file under <code>files</code> with its SHA-256, including the entry and any optional <code>thumbnail</code> in PNG or JPG. Use relative paths with forward slashes.</p>
+        <p>Optional fields include <code>description</code>, <code>dependencies</code>, <code>permissions</code>, and <code>preview</code>. Dependencies and permissions describe expectations on the resource card. Use the Python environment controls to install Python dependencies. <code>preview: false</code> hides the workspace preview for a script that requests it.</p>
+      </section>
+
+      <section id="identity">
+        <h2>Discord and device binding</h2>
+        <h3>Require a server membership or role</h3>
+        <pre><code>"discord": { "guildId": "222", "roles": ["333", "444"], "requireAll": false }</code></pre>
+        <p>Replace the example IDs with your own Discord IDs as strings. Omit <code>roles</code> for membership alone. Roles match any listed role by default, or every role with <code>requireAll: true</code>. Optional <code>userId</code> pins access to one account. Resource Discord policies apply to Python and native packages.</p>
+        <p>Ethos reuses the sign-in from <strong>Settings → Account</strong>. Python reads <code>app.discord</code>, and native packages receive settings under <code>discordAccess</code>. Verified fields are <code>verified</code>, <code>userId</code>, <code>guildId</code>, and matching <code>roles</code>.</p>
+        <h3>Bind a product license to an account and device</h3>
+        <p>Register a product and its access policy with the Ethos service operator. Set <code>developerProduct</code> to the same identifier as the resource <code>id</code>. Python receives <code>app.identity</code>. DLLs read <code>developerAccess</code> in <code>settings_json</code>, and standalone processes receive it in <code>initialize.settings</code>.</p>
+        <p>The result contains <code>productId</code>, <code>discordId</code>, <code>deviceId</code>, <code>expiresAt</code> in Unix milliseconds, and an <code>assertion</code>. Send the assertion to your backend over HTTPS. Verify ES256 using the operator’s pinned key and expected <code>kid</code>, <code>iss</code>, <code>aud</code>, and <code>exp</code>. Compare signed <code>sub</code> and <code>deviceId</code> with license records. Consume <code>jti</code> once when exchanging it for a longer session. The device ID represents a product-scoped Windows key.</p>
+        <p><a href="sdk/developer-authorization.md">Read the developer authorization protocol and response codes</a></p>
+      </section>
+
+      <section id="debug">
+        <h2>Troubleshooting</h2>
+        <ul>
+          <li><strong>Start is disabled.</strong> For CV, start a physical capture card and wait for frames. For OFS or a controller-only resource, connect the selected bridge.</li>
+          <li><strong>Missing Python modules.</strong> Select the environment for the script and install its requirements there. The interpreter shown in the workspace drives that environment.</li>
+          <li><strong>Capturing at high FPS.</strong> The card, driver, chosen resolution, and pixel format determine available rates. Processing FPS reflects completed callbacks, and display FPS depends on preview presentation.</li>
+          <li><strong>An override has no effect.</strong> Check bridge connection, physical controller selection, control name, value range, and where your script writes output. Read the output console with <kbd>Ctrl</kbd>+<kbd>J</kbd>.</li>
+          <li><strong>Resource fails inspection.</strong> Check entry type, manifest version, relative paths, and SHA-256 values. Reopen the manifest after changing any files.</li>
+        </ul>
+      </section>
+    </article>
+  </main>
+  <footer class="shell footer"><span>Ethos developer documentation</span><a href="index.html">Download Ethos</a></footer>
+</body>
+</html>

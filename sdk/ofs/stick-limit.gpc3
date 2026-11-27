@@ -1,0 +1,9 @@
+main {
+    if (get_actual(STICK_1_X) > 80) {
+        set_val(STICK_1_X, 80);
+    } else {
+        if (get_actual(STICK_1_X) < -80) {
+            set_val(STICK_1_X, -80);
+        }
+    }
+}

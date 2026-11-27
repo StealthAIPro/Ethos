@@ -1,0 +1,8 @@
+-- ofs {"name":"Stick deadzone","author":"Example","version":"1.0.0","requires_api":1,"permissions":["controller.read","controller.write"]}
+function on_tick(dt_ms)
+    if math.abs(offset.get("RX")) < 10 then
+        offset.set("RX", 0)
+    else
+        offset.release("RX")
+    end
+end
